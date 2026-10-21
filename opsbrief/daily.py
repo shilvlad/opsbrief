@@ -9,6 +9,8 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from .config import setting
+
 ROOT = Path(__file__).resolve().parents[1]
 COLLECTOR = Path(__file__).with_name("calendar") / "collector.swift"
 SELECTION = ROOT / "local" / "calendars.json"
@@ -250,7 +252,7 @@ def main():
         print("Отчёты:", stem.with_suffix(".md"), stem.with_suffix(".json"), voice_path)
         if args.upload:
             from .voice_upload import send_payload
-            send_payload(voice, os.getenv("OPSBRIEF_API_URL", ""), os.getenv("OPSBRIEF_UPLOAD_TOKEN", ""))
+            send_payload(voice, setting("OPSBRIEF_API_URL"), setting("OPSBRIEF_UPLOAD_TOKEN"))
             print("Полная сводка отправлена на API.")
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
         parser.exit(2, f"Ошибка: {exc}\n")
