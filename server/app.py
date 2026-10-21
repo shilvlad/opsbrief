@@ -12,6 +12,7 @@ app = FastAPI(title="OpsBrief")
 DB_PATH = Path(os.getenv("OPSBRIEF_DB", "/data/opsbrief.sqlite3"))
 UPLOAD_TOKEN = os.getenv("OPSBRIEF_UPLOAD_TOKEN", "")
 SKILL_ID = os.getenv("OPSBRIEF_ALICE_SKILL_ID", "")
+WEBHOOK_SECRET = os.getenv("OPSBRIEF_WEBHOOK_SECRET", "")
 MAX_AGE_HOURS = int(os.getenv("OPSBRIEF_MAX_AGE_HOURS", "30"))
 
 
@@ -72,8 +73,10 @@ def response(text, session):
     }
 
 
-@app.post("/alice/webhook")
-async def alice_webhook(request: Request):
+@app.post("/alice/webhook/{secret}")
+async def alice_webhook(secret: str, request: Request):
+    if not WEBHOOK_SECRET or not hmac.compare_digest(secret, WEBHOOK_SECRET):
+        raise HTTPException(404, "Not found")
     payload = await request.json()
     session = payload.get("session", {})
     if not SKILL_ID or session.get("skill_id") != SKILL_ID:
