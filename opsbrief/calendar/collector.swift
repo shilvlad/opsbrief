@@ -53,7 +53,11 @@ guard selected.count == ids.count else {
     fputs("Один или несколько выбранных календарей не найдены. Повтори --list и выбор.\n", stderr); exit(2)
 }
 
-let dayText = argument("--date") ?? String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+let localDayFormatter = DateFormatter()
+localDayFormatter.locale = Locale(identifier: "en_US_POSIX")
+localDayFormatter.timeZone = TimeZone.current
+localDayFormatter.dateFormat = "yyyy-MM-dd"
+let dayText = argument("--date") ?? localDayFormatter.string(from: Date())
 let dayFormatter = DateFormatter()
 dayFormatter.locale = Locale(identifier: "en_US_POSIX")
 dayFormatter.calendar = Calendar(identifier: .gregorian)
