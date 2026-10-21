@@ -1,0 +1,93 @@
+"""OpsBrief VPS: voice-safe summary ingestion and Alice webhook."""
+import hmac
+import json
+import os
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from fastapi import FastAPI, Header, HTTPException, Request
+from pydantic import BaseModel, Field
+
+app = FastAPI(title="OpsBrief")
+DB_PATH = Path(os.getenv("OPSBRIEF_DB", "/data/opsbrief.sqlite3"))
+UPLOAD_TOKEN = os.getenv("OPSBRIEF_UPLOAD_TOKEN", "")
+SKILL_ID = os.getenv("OPSBRIEF_ALICE_SKILL_ID", "")
+MAX_AGE_HOURS = int(os.getenv("OPSBRIEF_MAX_AGE_HOURS", "30"))
+
+
+class VoiceSummary(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    timezone: str = Field(max_length=80)
+    meetings: list[str] = Field(max_length=30)
+    recommendations: list[str] = Field(max_length=10)
+
+
+def db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""CREATE TABLE IF NOT EXISTS briefs
+                    (id INTEGER PRIMARY KEY CHECK (id=1),
+                     payload TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+    return conn
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/api/v1/brief")
+def upload(payload: VoiceSummary, authorization: str | None = Header(default=None)):
+    if not UPLOAD_TOKEN or not authorization or not hmac.compare_digest(
+        authorization, "Bearer " + UPLOAD_TOKEN
+    ):
+        raise HTTPException(401, "Unauthorized")
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO briefs (id,payload,updated_at) VALUES (1,?,?) "
+            "ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+            (payload.model_dump_json(), datetime.now(timezone.utc).isoformat()),
+        )
+    return {"accepted": True}
+
+
+def latest():
+    with db() as conn:
+        row = conn.execute("SELECT payload, updated_at FROM briefs WHERE id=1").fetchone()
+    if not row:
+        return None
+    saved = datetime.fromisoformat(row[1])
+    hours = (datetime.now(timezone.utc) - saved).total_seconds() / 3600
+    return json.loads(row[0]) if 0 <= hours <= MAX_AGE_HOURS else None
+
+
+def response(text, session):
+    # Yandex Dialogs text is limited; don't stream full reports.
+    return {
+        "response": {"text": text[:1000], "end_session": False},
+        "session": {"session_id": session.get("session_id", ""),
+                    "message_id": session.get("message_id", 0),
+                    "user_id": session.get("user_id", "")},
+        "version": "1.0",
+    }
+
+
+@app.post("/alice/webhook")
+async def alice_webhook(request: Request):
+    payload = await request.json()
+    session = payload.get("session", {})
+    if not SKILL_ID or session.get("skill_id") != SKILL_ID:
+        raise HTTPException(403, "Skill not configured or unexpected skill ID")
+    # This endpoint is deliberately restricted to anonymous, voice-safe payloads:
+    # skill_id/user_id alone cannot authenticate request provenance.
+    brief = latest()
+    if not brief:
+        return response("Актуальная сводка ещё не загружена.", session)
+    command = payload.get("request", {}).get("command", "").lower()
+    if any(word in command for word in ("рекоменд", "совет", "важно", "главно", "приоритет")):
+        items = brief["recommendations"]
+        prefix = "Рекомендации на день: "
+    else:
+        items = brief["meetings"]
+        prefix = "Встречи на день: "
+    return response(prefix + ("; ".join(items) if items else "Нет данных."), session)
