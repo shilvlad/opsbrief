@@ -6,6 +6,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from .config import setting
+
 
 def send_payload(content, url, token):
     parts = urlsplit(url)
@@ -32,10 +34,10 @@ def send_payload(content, url, token):
 def main():
     parser = argparse.ArgumentParser(description="Отправить полную сводку на OpsBrief API")
     parser.add_argument("--file", type=Path, required=True)
-    parser.add_argument("--url", default=os.getenv("OPSBRIEF_API_URL", ""))
+    parser.add_argument("--url", default=setting("OPSBRIEF_API_URL"))
     args = parser.parse_args()
     payload = json.loads(args.file.read_text(encoding="utf-8"))
-    print(json.dumps(send_payload(payload, args.url, os.getenv("OPSBRIEF_UPLOAD_TOKEN", "")), ensure_ascii=False))
+    print(json.dumps(send_payload(payload, args.url, setting("OPSBRIEF_UPLOAD_TOKEN")), ensure_ascii=False))
 
 
 if __name__ == "__main__":
