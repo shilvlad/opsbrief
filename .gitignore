@@ -1,0 +1,24 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Corporate data must live in these ignored directories.
+data/
+reports/
+local/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+# Python and tools
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.DS_Store

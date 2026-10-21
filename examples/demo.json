@@ -1,0 +1,92 @@
+{
+  "source": "Synthetic demo — no corporate data",
+  "week_start": "2026-10-19",
+  "week_end": "2026-10-23",
+  "captured_on": "2026-10-19",
+  "team": [
+    {
+      "id": "devops",
+      "name": "Demo DevOps",
+      "working_hours": 40,
+      "absence_hours": 0,
+      "meeting_hours": 4,
+      "operations_hours": 8,
+      "reserve_hours": 8
+    },
+    {
+      "id": "dba",
+      "name": "Demo DBA",
+      "working_hours": 40,
+      "absence_hours": 8,
+      "meeting_hours": 4,
+      "operations_hours": 8,
+      "reserve_hours": 4
+    }
+  ],
+  "issues": [
+    {
+      "key": "DEMO-1",
+      "summary": "Standardize deployment checks",
+      "assignee": "devops",
+      "remaining_hours": 24,
+      "planned": true,
+      "status": "todo",
+      "due_date": "2026-10-23",
+      "blocked_by": []
+    },
+    {
+      "key": "DEMO-2",
+      "summary": "Verify database restore",
+      "assignee": "dba",
+      "remaining_hours": 8,
+      "planned": true,
+      "status": "in_progress",
+      "due_date": "2026-10-16",
+      "blocked_by": []
+    },
+    {
+      "key": "DEMO-3",
+      "summary": "Prepare schema migration",
+      "assignee": "dba",
+      "remaining_hours": null,
+      "planned": true,
+      "status": "todo",
+      "due_date": null,
+      "blocked_by": [
+        "DEMO-2"
+      ]
+    },
+    {
+      "key": "DEMO-4",
+      "summary": "Confirm maintenance window",
+      "assignee": null,
+      "remaining_hours": 2,
+      "planned": true,
+      "status": "todo",
+      "due_date": null,
+      "blocked_by": [
+        "EXT-1"
+      ]
+    },
+    {
+      "key": "DEMO-5",
+      "summary": "Completed infrastructure task",
+      "assignee": "devops",
+      "remaining_hours": 100,
+      "planned": true,
+      "status": "done",
+      "due_date": null,
+      "blocked_by": []
+    },
+    {
+      "key": "DEMO-6",
+      "summary": "Backlog improvement",
+      "assignee": "devops",
+      "remaining_hours": 80,
+      "planned": false,
+      "status": "todo",
+      "due_date": null,
+      "blocked_by": []
+    }
+  ]
+}
