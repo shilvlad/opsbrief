@@ -1,6 +1,7 @@
 """Локальная ежедневная сводка календаря; без сторонних Python-зависимостей."""
 import argparse
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -182,6 +183,26 @@ def render(facts, ai):
     return "\n".join(lines) + "\n"
 
 
+
+def make_voice_payload(facts, ai):
+    """Полный перечень встреч и рекомендаций (без сокращения названий)."""
+    meetings = []
+    for item in facts["events"]:
+        start = datetime.fromisoformat(item["start"])
+        end = datetime.fromisoformat(item["end"])
+        when = "весь день" if item["all_day"] else f"{start:%H:%M}–{end:%H:%M}"
+        meetings.append(f"{when}: {item['title']} ({item['calendar']})")
+    recommendations = []
+    if ai:
+        recommendations = [ai["summary"], *ai["priorities"], *ai["recommendations"]]
+    return {
+        "date": facts["date"],
+        "timezone": facts["timezone"],
+        "meetings": meetings,
+        "recommendations": recommendations,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Ежедневная сводка календаря macOS")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -190,6 +211,7 @@ def main():
     daily = commands.add_parser("run", help="Сформировать план")
     daily.add_argument("--date", default=date.today().isoformat())
     daily.add_argument("--no-ai", action="store_true", help="Без Ollama/Qwen")
+    daily.add_argument("--upload", action="store_true", help="Отправить полную сводку на API (требуется токен)")
     daily.add_argument("--model", default="qwen3:8b")
     daily.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     args = parser.parse_args()
@@ -222,7 +244,14 @@ def main():
         stem = folder / ("daily-" + args.date)
         stem.with_suffix(".json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         stem.with_suffix(".md").write_text(render(facts, ai), encoding="utf-8")
-        print("Отчёты:", stem.with_suffix(".md"), stem.with_suffix(".json"))
+        voice = make_voice_payload(facts, ai)
+        voice_path = folder / ("voice-" + args.date + ".json")
+        voice_path.write_text(json.dumps(voice, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print("Отчёты:", stem.with_suffix(".md"), stem.with_suffix(".json"), voice_path)
+        if args.upload:
+            from .voice_upload import send_payload
+            send_payload(voice, os.getenv("OPSBRIEF_API_URL", ""), os.getenv("OPSBRIEF_UPLOAD_TOKEN", ""))
+            print("Полная сводка отправлена на API.")
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
         parser.exit(2, f"Ошибка: {exc}\n")
 
