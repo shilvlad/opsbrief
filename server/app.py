@@ -3,7 +3,8 @@ import hmac
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ UPLOAD_TOKEN = os.getenv("OPSBRIEF_UPLOAD_TOKEN", "")
 SKILL_ID = os.getenv("OPSBRIEF_ALICE_SKILL_ID", "")
 WEBHOOK_SECRET = os.getenv("OPSBRIEF_WEBHOOK_SECRET", "")
 MAX_AGE_HOURS = int(os.getenv("OPSBRIEF_MAX_AGE_HOURS", "30"))
+ALLOWED_USER_IDS = {x.strip() for x in os.getenv("OPSBRIEF_ALICE_ALLOWED_USER_IDS", "").split(",") if x.strip()}
 
 
 class VoiceSummary(BaseModel):
@@ -59,7 +61,15 @@ def latest():
         return None
     saved = datetime.fromisoformat(row[1])
     hours = (datetime.now(timezone.utc) - saved).total_seconds() / 3600
-    return json.loads(row[0]) if 0 <= hours <= MAX_AGE_HOURS else None
+    if not 0 <= hours <= MAX_AGE_HOURS:
+        return None
+    payload = json.loads(row[0])
+    try:
+        tz = ZoneInfo(payload["timezone"])
+        brief_day = date.fromisoformat(payload["date"])
+    except (KeyError, ValueError, TypeError, ZoneInfoNotFoundError):
+        return None
+    return payload if brief_day == datetime.now(tz).date() else None
 
 
 def response(text, session):
@@ -81,8 +91,10 @@ async def alice_webhook(secret: str, request: Request):
     session = payload.get("session", {})
     if not SKILL_ID or session.get("skill_id") != SKILL_ID:
         raise HTTPException(403, "Skill not configured or unexpected skill ID")
-    # This endpoint is deliberately restricted to anonymous, voice-safe payloads:
-    # skill_id/user_id alone cannot authenticate request provenance.
+    # Фильтр по заявленному user_id — не проверка подлинности запроса.
+    if ALLOWED_USER_IDS and session.get("user_id") not in ALLOWED_USER_IDS:
+        raise HTTPException(403, "User not allowed")
+    # Секрет в URL и ID не заменяют полноценную авторизацию.
     brief = latest()
     if not brief:
         return response("Актуальная сводка ещё не загружена.", session)
