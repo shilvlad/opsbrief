@@ -7,4 +7,4 @@ COPY server/app.py app.py
 RUN useradd --create-home --uid 10001 opsbrief && mkdir -p /data && chown opsbrief:opsbrief /data
 USER opsbrief
 EXPOSE 8080
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1", "--no-access-log"]
