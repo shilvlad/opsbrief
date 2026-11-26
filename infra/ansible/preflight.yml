@@ -1,0 +1,43 @@
+---
+- name: OpsBrief | read-only preflight
+  hosts: opsbrief
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Validate Ubuntu 24.04
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_version == '24.04'
+        fail_msg: "Bootstrap tested for Ubuntu 24.04 only"
+
+    - name: Collect listening TCP ports
+      ansible.builtin.command: ss -lnt
+      register: opsbrief_ports
+      changed_when: false
+
+    - name: Check existing application directory
+      ansible.builtin.stat:
+        path: /opt/opsbrief
+      register: opsbrief_directory
+
+    - name: Check existing nginx installation
+      ansible.builtin.stat:
+        path: /etc/nginx
+      register: opsbrief_nginx
+
+    - name: Check existing Docker binary
+      ansible.builtin.command: sh -c 'command -v docker || true'
+      register: opsbrief_docker
+      changed_when: false
+
+    - name: Show preflight findings (no changes)
+      ansible.builtin.debug:
+        msg:
+          - "Target: {{ inventory_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "/opt/opsbrief exists: {{ opsbrief_directory.stat.exists }}"
+          - "nginx installed: {{ opsbrief_nginx.stat.exists }}"
+          - "docker binary: {{ opsbrief_docker.stdout | default('') }}"
+          - "TCP listeners:"
+          - "{{ opsbrief_ports.stdout_lines }}"
