@@ -23,10 +23,20 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate app and shell
         run: |
+          set -euo pipefail
           python -m compileall -q opsbrief server
           bash -n infra/scripts/bootstrap-and-deploy.sh
-      - name: Docker build
-        run: docker compose build
+      - name: Docker build (test configuration only)
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'OPSBRIEF_UPLOAD_TOKEN=ci-only-upload-token' \
+            'OPSBRIEF_WEBHOOK_SECRET=ci-only-webhook-secret' \
+            'OPSBRIEF_ALICE_SKILL_ID=ci-test-skill' \
+            'OPSBRIEF_DB=/data/opsbrief.sqlite3' > .env
+          docker compose config --quiet
+          docker compose build
+          rm -f .env
 
   deploy:
     needs: verify
