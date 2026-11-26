@@ -1,0 +1,96 @@
+name: Rebuild OpsBrief VPS
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opsbrief-rebuild
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate app and shell
+        run: |
+          python -m compileall -q opsbrief server
+          bash -n infra/scripts/bootstrap-and-deploy.sh
+      - name: Docker build
+        run: docker compose build
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment: opsbrief-recovery
+    timeout-minutes: 25
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+      OPSBRIEF_DOMAIN: ${{ vars.OPSBRIEF_DOMAIN }}
+      LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
+      OPSBRIEF_UPLOAD_TOKEN: ${{ secrets.OPSBRIEF_UPLOAD_TOKEN }}
+      OPSBRIEF_WEBHOOK_SECRET: ${{ secrets.OPSBRIEF_WEBHOOK_SECRET }}
+      OPSBRIEF_ALICE_SKILL_ID: ${{ secrets.OPSBRIEF_ALICE_SKILL_ID }}
+      OPSBRIEF_ALICE_ALLOWED_USER_IDS: ${{ secrets.OPSBRIEF_ALICE_ALLOWED_USER_IDS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_HOST_KEY OPSBRIEF_DOMAIN LETSENCRYPT_EMAIL OPSBRIEF_UPLOAD_TOKEN OPSBRIEF_WEBHOOK_SECRET OPSBRIEF_ALICE_SKILL_ID; do
+            [[ -n "${!variable}" ]] || { echo "Missing setting: $variable" >&2; exit 1; }
+          done
+          [[ "$OPSBRIEF_UPLOAD_TOKEN" != "$OPSBRIEF_WEBHOOK_SECRET" ]] || exit 1
+      - name: Prepare SSH and service environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy"
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          # Python avoids shell evaluation of secret contents.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          keys = ["OPSBRIEF_UPLOAD_TOKEN", "OPSBRIEF_WEBHOOK_SECRET",
+                  "OPSBRIEF_ALICE_SKILL_ID", "OPSBRIEF_ALICE_ALLOWED_USER_IDS"]
+          values = {k: os.environ.get(k, "") for k in keys}
+          if any("\n" in v or "\r" in v for v in values.values()):
+              raise SystemExit("Secrets must not contain line breaks")
+          values["OPSBRIEF_MAX_AGE_HOURS"] = "30"
+          values["OPSBRIEF_DB"] = "/data/opsbrief.sqlite3"
+          Path("opsbrief.env").write_text(
+              "".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8"
+          )
+          PY
+          chmod 600 opsbrief.env
+      - name: Copy install files and deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH=(ssh -i "$HOME/.ssh/deploy" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          SCP=(scp -i "$HOME/.ssh/deploy" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          "${SCP[@]}" infra/scripts/bootstrap-and-deploy.sh opsbrief.env "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+          "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "sudo -n bash /tmp/bootstrap-and-deploy.sh '$OPSBRIEF_DOMAIN' '$LETSENCRYPT_EMAIL' '${GITHUB_SHA}' /tmp/opsbrief.env"
+          "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'rm -f /tmp/bootstrap-and-deploy.sh /tmp/opsbrief.env'
+      - name: Remove local secrets
+        if: always()
+        run: rm -f opsbrief.env "$HOME/.ssh/deploy"
