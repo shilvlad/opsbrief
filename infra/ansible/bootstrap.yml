@@ -1,0 +1,76 @@
+---
+- name: OpsBrief | base server bootstrap
+  hosts: opsbrief
+  gather_facts: true
+  become: true
+  vars:
+    opsbrief_deploy_user: deploy
+  pre_tasks:
+    - name: Require Ubuntu 24.04
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_version == '24.04'
+
+    - name: Require explicitly supplied deploy public key
+      ansible.builtin.assert:
+        that:
+          - opsbrief_deploy_public_key is defined
+          - opsbrief_deploy_public_key is match('^ssh-(ed25519|rsa) ')
+        fail_msg: "Pass opsbrief_deploy_public_key as an SSH PUBLIC key (not a private key)."
+
+  tasks:
+    - name: Refresh apt package index
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - git
+          - sudo
+          - python3
+          - docker.io
+          - docker-compose-v2
+        state: present
+
+    - name: Ensure Docker service enabled and running
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Create non-root deployment user
+      ansible.builtin.user:
+        name: "{{ opsbrief_deploy_user }}"
+        shell: /bin/bash
+        create_home: true
+        groups: docker
+        append: true
+        state: present
+
+    - name: Install deployment public key
+      ansible.posix.authorized_key:
+        user: "{{ opsbrief_deploy_user }}"
+        key: "{{ opsbrief_deploy_public_key }}"
+        state: present
+        exclusive: false
+
+    - name: Create application directory without touching existing data
+      ansible.builtin.file:
+        path: /opt/opsbrief
+        state: directory
+        owner: "{{ opsbrief_deploy_user }}"
+        group: "{{ opsbrief_deploy_user }}"
+        mode: '0750'
+
+    - name: Verify Docker Compose
+      ansible.builtin.command: docker compose version
+      changed_when: false
+
+    - name: Report ready-to-deploy state
+      ansible.builtin.debug:
+        msg: "Bootstrap complete. No application deployment, nginx, firewall or SSH hardening was performed."
